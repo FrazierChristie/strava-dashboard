@@ -46,19 +46,30 @@ function DeltaBadge({ curr, prev }: { curr: number; prev: number }) {
 }
 
 export default function YearOverYear({ activities }: Props) {
-  // Get distinct years, most recent first
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  // YTD cutoff: same month+day in any year (e.g. today is Mar 31, so only count up to Mar 31 in past years)
+  const ytdMonth = now.getMonth();
+  const ytdDay   = now.getDate();
+
+  function isWithinYTD(dateStr: string, year: number): boolean {
+    const d = new Date(dateStr);
+    if (d.getFullYear() !== year) return false;
+    if (d.getMonth() < ytdMonth) return true;
+    if (d.getMonth() === ytdMonth && d.getDate() <= ytdDay) return true;
+    return false;
+  }
+
   const years = [...new Set(activities.map((a) => new Date(a.start_date).getFullYear()))]
     .sort((a, b) => b - a)
-    .slice(0, 5); // max 5 years
+    .slice(0, 5);
 
-  // Get distinct sports that have meaningful data
   const sportSet = new Set(activities.map((a) => a.sport_type));
   const sports = [...sportSet].filter((s) => {
     const total = activities.filter((a) => a.sport_type === s).length;
-    return total >= 3; // only show sports with at least 3 activities
+    return total >= 3;
   });
 
-  // Build lookup: sport → year → { count, distance, time }
   type YearStats = { count: number; distance: number; moving_time: number };
   const data: Record<string, Record<number, YearStats>> = {};
 
@@ -66,7 +77,7 @@ export default function YearOverYear({ activities }: Props) {
     data[sport] = {};
     for (const year of years) {
       const acts = activities.filter(
-        (a) => a.sport_type === sport && new Date(a.start_date).getFullYear() === year
+        (a) => a.sport_type === sport && isWithinYTD(a.start_date, year)
       );
       data[sport][year] = {
         count: acts.length,
@@ -77,10 +88,17 @@ export default function YearOverYear({ activities }: Props) {
   }
 
   const mostRecentYear = years[0];
-  const prevYear = years[1];
+
+  // Sort sports by most activities in the current year
+  const sortedSports = [...sports].sort(
+    (a, b) => (data[b][mostRecentYear]?.count ?? 0) - (data[a][mostRecentYear]?.count ?? 0)
+  );
 
   return (
     <div className="overflow-x-auto">
+      <p className="text-[10px] text-white/20 mb-3">
+        YTD comparison · up to {now.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} each year
+      </p>
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-white/10">
@@ -102,7 +120,7 @@ export default function YearOverYear({ activities }: Props) {
           </tr>
         </thead>
         <tbody>
-          {sports.map((sport) => {
+          {sortedSports.map((sport) => {
             const cfg = SPORT_CONFIG[sport] ?? { icon: "🏅", label: sport };
             const hasDistance = (data[sport][mostRecentYear]?.distance ?? 0) > 0;
             return (

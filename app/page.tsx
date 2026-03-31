@@ -36,6 +36,7 @@ interface Activity {
   id: number;
   start_date: string;
   sport_type: string;
+  name: string;
   distance: number;
   moving_time: number;
   elevation_gain: number;
@@ -217,7 +218,7 @@ export default function Home() {
           <div>
             <span className="text-[#fc4c02] font-bold tracking-widest text-xs uppercase">Strava</span>
             <h1 className="text-lg font-bold tracking-tight leading-none">
-              {athlete ? `${athlete.firstname} ${athlete.lastname}` : "Dashboard"}
+              {athlete?.firstname ? `${athlete.firstname} ${athlete.lastname}` : "Dashboard"}
             </h1>
           </div>
         </div>

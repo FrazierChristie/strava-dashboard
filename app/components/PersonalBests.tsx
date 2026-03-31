@@ -10,11 +10,15 @@
 interface Activity {
   start_date: string;
   sport_type: string;
+  name: string;
   distance: number;
   moving_time: number;
-  name: string;
   elevation_gain: number;
 }
+
+const TREADMILL_KEYWORDS = ["treadmill", "mill", "indoor run"];
+const isTreadmill = (a: Activity) =>
+  TREADMILL_KEYWORDS.some((kw) => a.name?.toLowerCase().includes(kw));
 
 interface Props {
   activities: Activity[];
@@ -68,7 +72,7 @@ function getBestPredicted(runs: Activity[], targetMetres: number): { time: numbe
 }
 
 function getOtherBests(activities: Activity[]) {
-  const runs   = activities.filter((a) => a.sport_type === "Run" || a.sport_type === "TrailRun");
+  const runs   = activities.filter((a) => (a.sport_type === "Run" || a.sport_type === "TrailRun") && !isTreadmill(a));
   const rides  = activities.filter((a) => a.sport_type === "Ride");
   const allActs = activities;
 
@@ -90,7 +94,9 @@ function getOtherBests(activities: Activity[]) {
 }
 
 export default function PersonalBests({ activities }: Props) {
-  const runs = activities.filter((a) => a.sport_type === "Run" || a.sport_type === "TrailRun");
+  const runs = activities.filter(
+    (a) => (a.sport_type === "Run" || a.sport_type === "TrailRun") && !isTreadmill(a)
+  );
   const { longestRun, longestRide, mostElev, bestWeekKey } = getOtherBests(activities);
 
   return (
