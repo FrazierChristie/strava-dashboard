@@ -68,7 +68,7 @@ export default function WeeklyVolumeChart({
 
   // Generate last N weeks as sorted array
   const today = new Date();
-  const weeks = [];
+  const weeks: Array<{ week: string; label: string; [key: string]: number | string }> = [];
   for (let i = weeksToShow - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i * 7);
