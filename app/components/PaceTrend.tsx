@@ -28,9 +28,13 @@ function riegelPredict(knownTime: number, knownDist: number, targetDist: number)
 }
 
 function getBestPredictedPace(runs: Activity[], targetMetres: number): number | null {
-  const eligible = runs.filter(
-    (r) => r.distance >= 1000 && r.distance <= targetMetres * 2 && r.moving_time > 0
-  );
+  const eligible = runs.filter((r) => {
+    if (r.distance < targetMetres * 0.6 || r.distance > targetMetres * 1.2) return false;
+    if (r.moving_time <= 0) return false;
+    const paceSecPerKm = r.moving_time / (r.distance / 1000);
+    if (paceSecPerKm < 180) return false; // faster than 3:00/km = bad data
+    return true;
+  });
   if (!eligible.length) return null;
   let best: number | null = null;
   for (const run of eligible) {

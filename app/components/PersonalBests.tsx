@@ -52,14 +52,24 @@ function riegelPredict(knownTime: number, knownDist: number, targetDist: number)
 }
 
 function getBestPredicted(runs: Activity[], targetMetres: number): { time: number; date: string; pace: string } | null {
-  // Only use runs between 1km and 2× the target distance for Riegel accuracy
-  const eligible = runs.filter(
-    (r) => r.distance >= 1000 && r.distance <= targetMetres * 2 && r.moving_time > 0
-  );
+  // Only use runs between 60% and 120% of the target distance.
+  // Riegel breaks down when extrapolating far from the source distance -
+  // a fast short run predicts unrealistically quick longer times.
+  const minDist = targetMetres * 0.6;
+  const maxDist = targetMetres * 1.2;
+
+  const eligible = runs.filter((r) => {
+    if (r.distance < minDist || r.distance > maxDist) return false;
+    if (r.moving_time <= 0) return false;
+    // Sanity check: ignore anything faster than 3:00/km (GPS glitch or sprint)
+    const paceSecPerKm = r.moving_time / (r.distance / 1000);
+    if (paceSecPerKm < 180) return false;
+    return true;
+  });
+
   if (!eligible.length) return null;
 
   let best: { time: number; date: string } | null = null;
-
   for (const run of eligible) {
     const predicted = riegelPredict(run.moving_time, run.distance, targetMetres);
     if (!best || predicted < best.time) {
