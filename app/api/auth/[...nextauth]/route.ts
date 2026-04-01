@@ -19,13 +19,43 @@ export const authOptions: NextAuthOptions = {
     // Called when a JWT token is created/updated.
     // We store the Strava access token here so we can use it for API calls.
     async jwt({ token, account }) {
+      // First sign-in: store tokens from Strava
       if (account) {
-        token.accessToken = account.access_token ?? "";
+        token.accessToken  = account.access_token  ?? "";
         token.refreshToken = account.refresh_token ?? "";
-        token.expiresAt = account.expires_at ?? 0;
-        token.athleteId = account.providerAccountId;
+        token.expiresAt    = account.expires_at    ?? 0;
+        token.athleteId    = account.providerAccountId;
+        return token;
       }
-      return token;
+
+      // Token still valid - return as-is
+      if (Date.now() < (token.expiresAt as number) * 1000) {
+        return token;
+      }
+
+      // Token expired - refresh it using Strava's token endpoint
+      try {
+        const res = await fetch("https://www.strava.com/oauth/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id:     process.env.NEXT_PUBLIC_STRAVA_CLIENT_ID,
+            client_secret: process.env.STRAVA_CLIENT_SECRET,
+            grant_type:    "refresh_token",
+            refresh_token: token.refreshToken,
+          }),
+        });
+        const refreshed = await res.json();
+        return {
+          ...token,
+          accessToken:  refreshed.access_token,
+          refreshToken: refreshed.refresh_token ?? token.refreshToken,
+          expiresAt:    refreshed.expires_at,
+        };
+      } catch {
+        // Refresh failed - user will need to sign in again
+        return { ...token, error: "RefreshTokenError" };
+      }
     },
     // Called when session is checked. Exposes the access token to the client.
     async session({ session, token }) {

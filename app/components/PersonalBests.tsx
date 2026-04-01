@@ -1,12 +1,5 @@
 "use client";
 
-// Personal Bests extracted from run history.
-// Uses the Riegel formula to predict race times from training data:
-// predicted_time = known_time × (target_distance / known_distance) ^ 1.06
-//
-// We find the best predicted performance at each target distance
-// by running the formula against all recorded runs.
-
 interface Activity {
   start_date: string;
   sport_type: string;
@@ -16,19 +9,20 @@ interface Activity {
   elevation_gain: number;
 }
 
-const TREADMILL_KEYWORDS = ["treadmill", "mill", "indoor run"];
-const isTreadmill = (a: Activity) =>
-  TREADMILL_KEYWORDS.some((kw) => a.name?.toLowerCase().includes(kw));
-
 interface Props {
   activities: Activity[];
 }
 
+const TREADMILL_KEYWORDS = ["treadmill", "mill", "indoor run"];
+const isTreadmill = (a: Activity) =>
+  TREADMILL_KEYWORDS.some((kw) => a.name?.toLowerCase().includes(kw));
+
+// Distance bands for each race distance - runs must fall within this range to count
 const TARGET_DISTANCES = [
-  { label: "5K",    metres: 5000 },
-  { label: "10K",   metres: 10000 },
-  { label: "HM",    metres: 21097 },
-  { label: "Marathon", metres: 42195 },
+  { label: "5K",       metres: 5000,  minKm: 4.8,  maxKm: 5.3  },
+  { label: "10K",      metres: 10000, minKm: 9.5,  maxKm: 10.6 },
+  { label: "HM",       metres: 21097, minKm: 20.5, maxKm: 22.0 },
+  { label: "Marathon", metres: 42195, minKm: 41.5, maxKm: 43.5 },
 ];
 
 function formatTime(seconds: number): string {
@@ -39,60 +33,44 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function formatPace(seconds: number, metres: number): string {
-  const secsPerKm = seconds / (metres / 1000);
+function formatPace(movingTime: number, distanceMetres: number): string {
+  const secsPerKm = movingTime / (distanceMetres / 1000);
   const m = Math.floor(secsPerKm / 60);
   const s = Math.round(secsPerKm % 60);
   return `${m}:${s.toString().padStart(2, "0")} /km`;
 }
 
-// Riegel prediction: t2 = t1 × (d2/d1)^1.06
-function riegelPredict(knownTime: number, knownDist: number, targetDist: number): number {
-  return knownTime * Math.pow(targetDist / knownDist, 1.06);
-}
-
-function getBestPredicted(runs: Activity[], targetMetres: number): { time: number; date: string; pace: string } | null {
-  // Only use runs between 60% and 120% of the target distance.
-  // Riegel breaks down when extrapolating far from the source distance -
-  // a fast short run predicts unrealistically quick longer times.
-  const minDist = targetMetres * 0.6;
-  const maxDist = targetMetres * 1.2;
-
+function getBestActual(runs: Activity[], minKm: number, maxKm: number) {
   const eligible = runs.filter((r) => {
-    if (r.distance < minDist || r.distance > maxDist) return false;
+    const km = r.distance / 1000;
+    if (km < minKm || km > maxKm) return false;
     if (r.moving_time <= 0) return false;
-    // Sanity check: ignore anything faster than 3:00/km (GPS glitch or sprint)
+    // Ignore anything faster than 3:30/km - GPS glitch or non-race segment
     const paceSecPerKm = r.moving_time / (r.distance / 1000);
-    if (paceSecPerKm < 180) return false;
+    if (paceSecPerKm < 210) return false;
     return true;
   });
 
   if (!eligible.length) return null;
 
-  let best: { time: number; date: string } | null = null;
-  for (const run of eligible) {
-    const predicted = riegelPredict(run.moving_time, run.distance, targetMetres);
-    if (!best || predicted < best.time) {
-      best = { time: predicted, date: run.start_date.slice(0, 10) };
-    }
-  }
-
-  if (!best) return null;
-  return { ...best, pace: formatPace(best.time, targetMetres) };
+  // Best = fastest pace (lowest secs/km)
+  return eligible.reduce((best, r) => {
+    const pace = r.moving_time / (r.distance / 1000);
+    const bestPace = best.moving_time / (best.distance / 1000);
+    return pace < bestPace ? r : best;
+  });
 }
 
 function getOtherBests(activities: Activity[]) {
-  const runs   = activities.filter((a) => (a.sport_type === "Run" || a.sport_type === "TrailRun") && !isTreadmill(a));
-  const rides  = activities.filter((a) => a.sport_type === "Ride");
-  const allActs = activities;
+  const runs  = activities.filter((a) => (a.sport_type === "Run" || a.sport_type === "TrailRun") && !isTreadmill(a));
+  const rides = activities.filter((a) => a.sport_type === "Ride");
 
-  const longestRun  = runs.sort((a, b) => b.distance - a.distance)[0];
-  const longestRide = rides.sort((a, b) => b.distance - a.distance)[0];
-  const mostElev    = allActs.sort((a, b) => b.elevation_gain - a.elevation_gain)[0];
+  const longestRun  = [...runs].sort((a, b) => b.distance - a.distance)[0];
+  const longestRide = [...rides].sort((a, b) => b.distance - a.distance)[0];
+  const mostElev    = [...activities].sort((a, b) => b.elevation_gain - a.elevation_gain)[0];
 
-  // Most active week
   const weekMap: Record<string, number> = {};
-  for (const act of allActs) {
+  for (const act of activities) {
     const d = new Date(act.start_date);
     d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     const key = d.toISOString().slice(0, 10);
@@ -112,37 +90,44 @@ export default function PersonalBests({ activities }: Props) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-      {/* Race predictions */}
+      {/* Race PBs */}
       <div>
         <p className="text-[10px] text-white/20 uppercase tracking-widest mb-3">
-          Estimated race times · Riegel formula
+          Race PBs · actual times within distance band
         </p>
         <div className="space-y-2">
-          {TARGET_DISTANCES.map(({ label, metres }) => {
-            const pb = getBestPredicted(runs, metres);
+          {TARGET_DISTANCES.map(({ label, minKm, maxKm }) => {
+            const pb = getBestActual(runs, minKm, maxKm);
             return (
               <div key={label} className="flex items-center justify-between py-2 border-b border-white/5">
                 <span className="text-white/50 text-sm w-20">{label}</span>
                 {pb ? (
                   <div className="text-right">
-                    <span className="text-[#fc4c02] font-bold text-lg tabular-nums">
-                      {formatTime(pb.time)}
-                    </span>
-                    <span className="text-white/25 text-xs ml-3">{pb.pace}</span>
+                    <div>
+                      <span className="text-[#fc4c02] font-bold text-lg tabular-nums">
+                        {formatTime(pb.moving_time)}
+                      </span>
+                      <span className="text-white/25 text-xs ml-3">
+                        {formatPace(pb.moving_time, pb.distance)}
+                      </span>
+                    </div>
+                    <div className="text-white/20 text-[10px] mt-0.5">
+                      {(pb.distance / 1000).toFixed(2)}km · {pb.start_date.slice(0, 10)}
+                    </div>
                   </div>
                 ) : (
-                  <span className="text-white/20 text-sm">Not enough data</span>
+                  <span className="text-white/20 text-sm">—</span>
                 )}
               </div>
             );
           })}
         </div>
         <p className="text-[10px] text-white/15 mt-2">
-          Predicted from best effort across all {runs.length} runs
+          From {runs.length} outdoor runs in selected period
         </p>
       </div>
 
-      {/* Other bests */}
+      {/* Records */}
       <div>
         <p className="text-[10px] text-white/20 uppercase tracking-widest mb-3">Records</p>
         <div className="space-y-2">
@@ -175,7 +160,7 @@ export default function PersonalBests({ activities }: Props) {
           )}
           {bestWeekKey && (
             <div className="flex items-center justify-between py-2 border-b border-white/5">
-              <span className="text-white/50 text-sm">📅 Most Active Week</span>
+              <span className="text-white/50 text-sm">📅 Busiest Week</span>
               <div className="text-right">
                 <span className="text-[#fc4c02] font-bold">{bestWeekKey[1]} activities</span>
                 <span className="text-white/25 text-xs ml-2">w/c {bestWeekKey[0]}</span>

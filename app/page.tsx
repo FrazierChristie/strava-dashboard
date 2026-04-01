@@ -169,10 +169,10 @@ export default function Home() {
   const [statsData, setStatsData]   = useState<StatsData | null>(null);
   const [actData, setActData]       = useState<ActivitiesData | null>(null);
   const [loading, setLoading]       = useState(false);
+  const [syncing, setSyncing]       = useState(false);
   const [period, setPeriod]         = useState<PeriodLabel>("1Y");
 
-  useEffect(() => {
-    if (!session) return;
+  const loadData = () => {
     setLoading(true);
     Promise.all([
       fetch("/api/strava/stats").then((r) => r.json()),
@@ -181,6 +181,11 @@ export default function Home() {
       setStatsData(stats);
       setActData(acts);
     }).finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (!session) return;
+    loadData();
   }, [session]);
 
   // All activities = source of truth (never filtered - needed for PMC computation)
@@ -231,13 +236,15 @@ export default function Home() {
             )}
             <button
               onClick={async () => {
-                const res = await fetch("/api/strava/sync", { method: "POST" });
-                const data = await res.json();
-                alert(data.message);
+                setSyncing(true);
+                await fetch("/api/strava/sync", { method: "POST" });
+                await loadData();
+                setSyncing(false);
               }}
-              className="border border-[#fc4c02]/40 hover:border-[#fc4c02] text-[#fc4c02]/60 hover:text-[#fc4c02] text-xs px-3 py-1.5 rounded transition-colors"
+              disabled={syncing}
+              className="border border-[#fc4c02]/40 hover:border-[#fc4c02] text-[#fc4c02]/60 hover:text-[#fc4c02] text-xs px-3 py-1.5 rounded transition-colors disabled:opacity-40"
             >
-              Sync
+              {syncing ? "Syncing..." : "Sync"}
             </button>
             <button
               onClick={() => signOut()}
@@ -320,7 +327,7 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
               <div className="bg-white/5 border border-white/10 rounded-lg p-6">
                 <h2 className="text-xs uppercase tracking-widest text-white/30 mb-4">Personal Bests</h2>
-                <PersonalBests activities={allActivities} />
+                <PersonalBests activities={filtered} />
               </div>
               <div className="bg-white/5 border border-white/10 rounded-lg p-6">
                 <h2 className="text-xs uppercase tracking-widest text-white/30 mb-4">Year over Year</h2>
